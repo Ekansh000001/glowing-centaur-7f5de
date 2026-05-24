@@ -37,7 +37,7 @@ background:#2dd4bf;color:#022c22;font-weight:bold;cursor:pointer
 <div class="panel" id="loginBox">
   <h2>Login</h2>
   <input id="email" placeholder="Email">
-  <input id="password" type="password" placeholder="Password">
+  <input id="password" type="password" placeholder="Password (min 6 chars)">
   <button onclick="login()">Login / Register</button>
 </div>
 
@@ -79,13 +79,24 @@ const chat = document.getElementById("chat");
 const status = document.getElementById("status");
 const statusText = document.getElementById("statusText");
 
-/* LOGIN / REGISTER */
+/* ✅ FIXED LOGIN */
 function login(){
-  const email = email.value;
-  const pass = password.value;
+  const emailInput = document.getElementById("email").value.trim();
+  const passInput = document.getElementById("password").value.trim();
 
-  auth.signInWithEmailAndPassword(email, pass)
-  .catch(() => auth.createUserWithEmailAndPassword(email, pass));
+  if (!emailInput || !passInput) {
+    alert("Please enter email and password");
+    return;
+  }
+
+  auth.signInWithEmailAndPassword(emailInput, passInput)
+    .catch(error => {
+      if (error.code === "auth/user-not-found") {
+        auth.createUserWithEmailAndPassword(emailInput, passInput);
+      } else {
+        alert(error.message);
+      }
+    });
 }
 
 /* LOGOUT */
