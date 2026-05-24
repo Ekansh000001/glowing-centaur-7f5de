@@ -3,114 +3,146 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Live Chat</title>
+<title>Secure Chat</title>
 
 <style>
-/* --- SAME DESIGN, UNCHANGED --- */
-:root{
---ink:#eff6ff;--muted:#a9b8c9;--panel:rgba(7,18,31,.78);
---line:rgba(174,205,237,.2);--accent:#2dd4bf;--accent-dark:#0f766e}
-*{box-sizing:border-box}
-body{margin:0;min-height:100vh;display:grid;place-items:center;
-font-family:Georgia,serif;background:linear-gradient(135deg,#07121f,#112632);color:var(--ink)}
-main{width:560px;max-width:100%;background:var(--panel);border-radius:18px;padding:20px}
-.header{display:flex;justify-content:space-between;align-items:center}
-.user-status{display:flex;gap:8px;align-items:center}
-.status-dot{width:10px;height:10px;border-radius:50%;background:#22c55e}
-.user-status.offline .status-dot{background:#ef4444}
-#chat{height:300px;overflow:auto;border:1px solid var(--line);padding:10px;margin:10px 0}
+body{
+margin:0;min-height:100vh;display:grid;place-items:center;
+font-family:system-ui;background:linear-gradient(135deg,#07121f,#112632);color:#eff6ff
+}
+.panel{
+width:360px;background:rgba(7,18,31,.8);
+padding:20px;border-radius:16px
+}
+h2{text-align:center}
+input,button{
+width:100%;height:42px;margin-top:8px;
+border-radius:10px;border:none;padding:8px
+}
+button{
+background:#2dd4bf;color:#022c22;font-weight:bold;cursor:pointer
+}
+#chatBox{display:none}
+#chat{height:240px;overflow:auto;border:1px solid #334;padding:8px;margin:8px 0}
 .message{margin-bottom:6px}
-.controls{display:grid;grid-template-columns:150px 1fr 100px;gap:8px}
-input,button{height:42px;border-radius:10px;border:none;padding:8px}
-button{background:linear-gradient(135deg,var(--accent),var(--accent-dark));color:#fff;font-weight:bold}
+.status{display:flex;align-items:center;gap:6px}
+.dot{width:10px;height:10px;border-radius:50%;background:#22c55e}
+.offline .dot{background:#ef4444}
+.logout{background:#ef4444;color:#fff}
 </style>
 </head>
 
 <body>
 
-<main>
-  <div class="header">
-    <h2>Live Chat</h2>
-    <div id="status" class="user-status offline">
-      <span class="status-dot"></span>
-      <span id="statusText">Offline</span>
-    </div>
+<div class="panel" id="loginBox">
+  <h2>Login</h2>
+  <input id="email" placeholder="Email">
+  <input id="password" type="password" placeholder="Password">
+  <button onclick="login()">Login / Register</button>
+</div>
+
+<div class="panel" id="chatBox">
+  <div class="status" id="status">
+    <span class="dot"></span>
+    <span id="statusText">Online</span>
   </div>
 
   <div id="chat"></div>
 
-  <div class="controls">
-    <input id="name" placeholder="Name">
-    <input id="message" placeholder="Message">
-    <button onclick="sendMessage()">Send</button>
-  </div>
-</main>
+  <input id="message" placeholder="Message">
+  <button onclick="sendMessage()">Send</button>
+  <button class="logout" onclick="logout()">Logout</button>
+</div>
 
 <!-- FIREBASE -->
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
 <script>
-/* 🔥 FIREBASE CONFIG */
 firebase.initializeApp({
   apiKey: "AIzaSyDbTrmHUaHodNAH130kfQJlD71iqIQ7DpQ",
   authDomain: "anything-5b5ca.firebaseapp.com",
   databaseURL: "https://anything-5b5ca-default-rtdb.firebaseio.com",
-  projectId: "anything-5b5ca",
+  projectId: "anything-5b5ca"
 });
 
-/* REFERENCES */
+const auth = firebase.auth();
 const db = firebase.database();
 const messagesRef = db.ref("messages");
 const presenceRef = db.ref("presence");
 const connectedRef = db.ref(".info/connected");
 
-/* ELEMENTS */
+const loginBox = document.getElementById("loginBox");
+const chatBox = document.getElementById("chatBox");
 const chat = document.getElementById("chat");
-const nameInput = document.getElementById("name");
-const statusBox = document.getElementById("status");
+const status = document.getElementById("status");
 const statusText = document.getElementById("statusText");
 
-/* 🔴 ONLINE / OFFLINE FIX (IMPORTANT PART) */
-let currentUser = null;
+/* LOGIN / REGISTER */
+function login(){
+  const email = email.value;
+  const pass = password.value;
 
-nameInput.addEventListener("change", () => {
-  currentUser = nameInput.value.trim();
-  if (!currentUser) return;
-
-  const userRef = presenceRef.child(currentUser);
-
-  connectedRef.on("value", snap => {
-    if (snap.val() === true) {
-      userRef.set(true);
-      userRef.onDisconnect().remove();
-      setOnline(true);
-    }
-  });
-});
-
-function setOnline(isOnline){
-  statusBox.classList.toggle("offline", !isOnline);
-  statusText.textContent = isOnline ? "Online" : "Offline";
+  auth.signInWithEmailAndPassword(email, pass)
+  .catch(() => auth.createUserWithEmailAndPassword(email, pass));
 }
 
-/* 💬 CHAT */
-messagesRef.on("child_added", snap => {
+/* LOGOUT */
+function logout(){
+  auth.signOut();
+}
+
+/* AUTH STATE */
+auth.onAuthStateChanged(user=>{
+  if(user){
+    loginBox.style.display="none";
+    chatBox.style.display="block";
+
+    const name = user.email.split("@")[0];
+    const userRef = presenceRef.child(user.uid);
+
+    connectedRef.on("value", snap=>{
+      if(snap.val()){
+        userRef.set(name);
+        userRef.onDisconnect().remove();
+        setOnline(true);
+      }
+    });
+
+  }else{
+    loginBox.style.display="block";
+    chatBox.style.display="none";
+    setOnline(false);
+  }
+});
+
+/* ONLINE STATUS */
+function setOnline(on){
+  status.classList.toggle("offline",!on);
+  statusText.textContent = on ? "Online" : "Offline";
+}
+
+/* CHAT */
+messagesRef.on("child_added",snap=>{
   const m = snap.val();
   const div = document.createElement("div");
-  div.className = "message";
+  div.className="message";
   div.textContent = m.name + ": " + m.text;
   chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
 });
 
 function sendMessage(){
-  const name = nameInput.value.trim();
-  const msg = document.getElementById("message").value.trim();
-  if(!name || !msg) return;
+  const msg = message.value.trim();
+  const user = auth.currentUser;
+  if(!msg || !user) return;
 
-  messagesRef.push({name,text:msg});
-  document.getElementById("message").value="";
+  messagesRef.push({
+    name: user.email.split("@")[0],
+    text: msg
+  });
+  message.value="";
 }
 </script>
 
