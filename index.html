@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Firebase Chat</title>
+<title>Firebase Chat with Admin Panel</title>
 
 <!-- Firebase v8 -->
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -18,23 +18,32 @@ body {
 }
 #chatBox { display: none; }
 #chat {
-  height: 300px;
+  height: 250px;
   overflow-y: auto;
   border: 1px solid #444;
   padding: 10px;
-  margin-bottom: 10px;
 }
 .message { margin: 6px 0; }
-input, button {
-  padding: 8px;
-  margin: 4px 0;
-}
-#statusText { font-weight: bold; }
+input, button { padding: 8px; margin: 4px 0; }
+
 .logout {
-  background: #c0392b;
-  color: white;
-  border: none;
-  cursor: pointer;
+  background:#c0392b;
+  color:white;
+  border:none;
+  cursor:pointer;
+}
+
+#adminPanel {
+  display:none;
+  border:1px solid #666;
+  padding:10px;
+  margin-top:15px;
+  background:#112733;
+}
+#adminLogs {
+  max-height:150px;
+  overflow-y:auto;
+  font-size:13px;
 }
 </style>
 </head>
@@ -44,10 +53,10 @@ input, button {
 <!-- LOGIN -->
 <div id="loginBox">
   <h2>Login / Register</h2>
-  <input type="email" id="email" placeholder="Email"><br>
-  <input type="password" id="password" placeholder="Password"><br>
+  <input id="email" type="email" placeholder="Email"><br>
+  <input id="password" type="password" placeholder="Password"><br>
   <button onclick="loginOrRegister()">Login / Register</button>
-  <p id="error" style="color:red;"></p>
+  <p id="error" style="color:red"></p>
 </div>
 
 <!-- CHAT -->
@@ -58,49 +67,53 @@ input, button {
     Status: <span id="statusText">Offline</span>
     <button class="logout" onclick="logout()">Logout</button>
   </div>
-  <hr>
 
   <div id="chat"></div>
 
   <input id="messageInput" placeholder="Type a message">
   <button onclick="sendMessage()">Send</button>
 
-  <hr>
   <h3>Online Users</h3>
   <ul id="onlineUsers"></ul>
+
+  <!-- ADMIN PANEL -->
+  <div id="adminPanel">
+    <h3>Admin Log Panel</h3>
+    <div id="adminLogs"></div>
+  </div>
 </div>
 
 <script>
-/* ================= FIREBASE CONFIG ================= */
-const firebaseConfig = {
+/* ===== FIREBASE CONFIG ===== */
+firebase.initializeApp({
   apiKey: "AIzaSyDbTrmHUaHodNAH130kfQJlD71iqIQ7DpQ",
   authDomain: "anything-5b5ca.firebaseapp.com",
   databaseURL: "https://anything-5b5ca-default-rtdb.firebaseio.com",
-  projectId: "anything-5b5ca",
-  storageBucket: "anything-5b5ca.firebasestorage.app",
-  messagingSenderId: "15504021949",
-  appId: "1:15504021949:web:a2e51091f3c3a617dddad4"
-};
-
-firebase.initializeApp(firebaseConfig);
+  projectId: "anything-5b5ca"
+});
 
 const auth = firebase.auth();
 const db = firebase.database();
+
 const messagesRef = db.ref("messages");
 const statusRef = db.ref("status");
+const logsRef = db.ref("logs");
 
-/* ================= ADMIN ================= */
-const ADMIN_EMAIL = "akrh6994@gmail.com"; // 🔴 your admin email
+const ADMIN_EMAIL = "akrh6994@gmail.com";
 let isAdmin = false;
 
-/* ================= LOGIN / REGISTER ================= */
+/* ===== LOGIN / REGISTER (FIXED) ===== */
 function loginOrRegister() {
+  const emailInput = document.getElementById("email");
+  const passwordInput = document.getElementById("password");
+  const errorBox = document.getElementById("error");
+
   const email = emailInput.value.trim();
   const password = passwordInput.value.trim();
-  error.textContent = "";
+  errorBox.textContent = "";
 
   if (!email || !password) {
-    error.textContent = "Email and password required";
+    errorBox.textContent = "Email and password required";
     return;
   }
 
@@ -108,106 +121,105 @@ function loginOrRegister() {
     .catch(err => {
       if (err.code === "auth/user-not-found") {
         auth.createUserWithEmailAndPassword(email, password)
-          .catch(e => error.textContent = e.message);
+          .catch(e => errorBox.textContent = e.message);
       } else {
-        error.textContent = err.message;
+        errorBox.textContent = err.message;
       }
     });
 }
 
-/* ================= AUTH STATE ================= */
+/* ===== AUTH STATE ===== */
 auth.onAuthStateChanged(user => {
   if (!user) {
     loginBox.style.display = "block";
     chatBox.style.display = "none";
-    statusText.textContent = "Offline";
-    statusText.style.color = "gray";
     return;
   }
 
-  isAdmin = (user.email === ADMIN_EMAIL);
+  isAdmin = user.email === ADMIN_EMAIL;
 
   loginBox.style.display = "none";
   chatBox.style.display = "block";
+  adminPanel.style.display = isAdmin ? "block" : "none";
   chat.innerHTML = "";
 
-  /* ---- ONLINE / OFFLINE PRESENCE ---- */
-  const userStatusRef = db.ref("status/" + user.uid);
-  const connectedRef = db.ref(".info/connected");
+  logEvent(user.email + " logged in");
 
-  connectedRef.on("value", snap => {
-    if (snap.val() === true) {
-      userStatusRef.onDisconnect().set({
-        state: "offline",
-        email: user.email,
-        lastChanged: firebase.database.ServerValue.TIMESTAMP
-      });
-
-      userStatusRef.set({
-        state: "online",
-        email: user.email,
-        lastChanged: firebase.database.ServerValue.TIMESTAMP
-      });
-
+  /* ONLINE STATUS */
+  const userStatus = db.ref("status/" + user.uid);
+  db.ref(".info/connected").on("value", snap => {
+    if (snap.val()) {
+      userStatus.onDisconnect().set({ state:"offline", email:user.email });
+      userStatus.set({ state:"online", email:user.email });
       statusText.textContent = "Online";
-      statusText.style.color = "lightgreen";
     }
   });
 
-  /* ---- CHAT LISTENER ---- */
+  /* CHAT */
   messagesRef.off();
   messagesRef.on("child_added", snap => {
     const m = snap.val();
-    const div = document.createElement("div");
-    div.className = "message";
-    div.textContent =
-      (isAdmin ? "[ADMIN] " : "") + m.name + ": " + m.text;
-    chat.appendChild(div);
+    const d = document.createElement("div");
+    d.className = "message";
+    d.textContent = (isAdmin ? "[ADMIN] " : "") + m.name + ": " + m.text;
+    chat.appendChild(d);
     chat.scrollTop = chat.scrollHeight;
   });
+
+  /* ADMIN LOG VIEW */
+  if (isAdmin) {
+    adminLogs.innerHTML = "";
+    logsRef.limitToLast(50).on("child_added", s => {
+      const p = document.createElement("div");
+      p.textContent =
+        new Date(s.val().time).toLocaleTimeString() +
+        " - " + s.val().text;
+      adminLogs.appendChild(p);
+    });
+  }
 });
 
-/* ================= SEND MESSAGE ================= */
+/* ===== SEND MESSAGE ===== */
 function sendMessage() {
   if (!auth.currentUser) return;
   const text = messageInput.value.trim();
   if (!text) return;
 
   messagesRef.push({
-    text: text,
     name: auth.currentUser.email.split("@")[0],
+    text: text,
     time: Date.now()
   });
 
+  logEvent(auth.currentUser.email + " sent message");
   messageInput.value = "";
 }
 
-/* ================= LOGOUT ================= */
+/* ===== LOGOUT ===== */
 function logout() {
-  const user = auth.currentUser;
-  if (!user) return;
-
-  db.ref("status/" + user.uid).set({
-    state: "offline",
-    email: user.email,
-    lastChanged: firebase.database.ServerValue.TIMESTAMP
-  }).then(() => {
-    auth.signOut();
-  });
+  if (!auth.currentUser) return;
+  logEvent(auth.currentUser.email + " logged out");
+  db.ref("status/" + auth.currentUser.uid)
+    .set({ state:"offline", email:auth.currentUser.email })
+    .then(() => auth.signOut());
 }
 
-/* ================= SHOW ONLINE USERS ================= */
+/* ===== ONLINE USERS ===== */
 statusRef.on("value", snap => {
   onlineUsers.innerHTML = "";
-  snap.forEach(child => {
-    const data = child.val();
-    if (data.state === "online") {
+  snap.forEach(c => {
+    if (c.val().state === "online") {
       const li = document.createElement("li");
-      li.textContent = data.email;
+      li.textContent = c.val().email;
       onlineUsers.appendChild(li);
     }
   });
 });
+
+/* ===== LOG FUNCTION ===== */
+function logEvent(text) {
+  logsRef.push({ text:text, time:Date.now() });
+}
 </script>
 
 </body>
