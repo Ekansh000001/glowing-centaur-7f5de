@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Firebase Chat with Admin Panel</title>
+<title>Firebase Chat</title>
 
 <!-- Firebase v8 -->
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -16,104 +16,114 @@ body {
   color: white;
   padding: 20px;
 }
+
 #chatBox { display: none; }
+
 #chat {
-  height: 250px;
+  height: 300px;
   overflow-y: auto;
   border: 1px solid #444;
   padding: 10px;
+  margin-bottom: 10px;
 }
-.message { margin: 6px 0; }
-input, button { padding: 8px; margin: 4px 0; }
 
-.logout {
-  background:#c0392b;
-  color:white;
-  border:none;
-  cursor:pointer;
+.message {
+  margin: 6px 0;
+  padding: 4px;
+  border-bottom: 1px solid #333;
+}
+
+.adminBtn {
+  margin-left: 8px;
+  font-size: 12px;
+  cursor: pointer;
+  color: red;
+}
+
+input, button {
+  padding: 8px;
+  margin: 4px 0;
 }
 
 #adminPanel {
-  display:none;
-  border:1px solid #666;
-  padding:10px;
-  margin-top:15px;
-  background:#112733;
+  display: none;
+  border: 1px solid #555;
+  padding: 10px;
+  margin-top: 10px;
 }
-#adminLogs {
-  max-height:150px;
-  overflow-y:auto;
-  font-size:13px;
-}
+
 </style>
 </head>
-
 <body>
 
 <!-- LOGIN -->
 <div id="loginBox">
   <h2>Login / Register</h2>
-  <input id="email" type="email" placeholder="Email"><br>
-  <input id="password" type="password" placeholder="Password"><br>
+  <input type="email" id="email" placeholder="Email"><br>
+  <input type="password" id="password" placeholder="Password"><br>
   <button onclick="loginOrRegister()">Login / Register</button>
-  <p id="error" style="color:red"></p>
+  <p id="error" style="color:red;"></p>
 </div>
 
 <!-- CHAT -->
 <div id="chatBox">
   <h2>Live Chat</h2>
+  <button onclick="logout()">Logout</button>
 
-  <div>
-    Status: <span id="statusText">Offline</span>
-    <button class="logout" onclick="logout()">Logout</button>
-  </div>
+  <p>Status: <span id="statusText">Offline</span></p>
+  <hr>
 
   <div id="chat"></div>
 
   <input id="messageInput" placeholder="Type a message">
   <button onclick="sendMessage()">Send</button>
 
+  <hr>
+
   <h3>Online Users</h3>
   <ul id="onlineUsers"></ul>
 
   <!-- ADMIN PANEL -->
   <div id="adminPanel">
-    <h3>Admin Log Panel</h3>
-    <div id="adminLogs"></div>
+    <h3>Admin Panel</h3>
+    <p>You can delete messages and kick users.</p>
+    <ul id="kickList"></ul>
   </div>
 </div>
 
 <script>
-/* ===== FIREBASE CONFIG ===== */
-firebase.initializeApp({
+/* ================= FIREBASE CONFIG ================= */
+const firebaseConfig = {
   apiKey: "AIzaSyDbTrmHUaHodNAH130kfQJlD71iqIQ7DpQ",
   authDomain: "anything-5b5ca.firebaseapp.com",
   databaseURL: "https://anything-5b5ca-default-rtdb.firebaseio.com",
-  projectId: "anything-5b5ca"
-});
+  projectId: "anything-5b5ca",
+  storageBucket: "anything-5b5ca.firebasestorage.app",
+  messagingSenderId: "15504021949",
+  appId: "1:15504021949:web:a2e51091f3c3a617dddad4"
+};
+
+firebase.initializeApp(firebaseConfig);
 
 const auth = firebase.auth();
 const db = firebase.database();
 
 const messagesRef = db.ref("messages");
 const statusRef = db.ref("status");
-const logsRef = db.ref("logs");
+const kickedRef = db.ref("kicked");
 
-const ADMIN_EMAIL = "akrh6994@gmail.com";
+/* ================= ADMIN ================= */
+const ADMIN_EMAIL = "akrh6994@gmail.com"; // 🔴 CHANGE
 let isAdmin = false;
 
-/* ===== LOGIN / REGISTER (FIXED) ===== */
+/* ================= LOGIN / REGISTER ================= */
 function loginOrRegister() {
-  const emailInput = document.getElementById("email");
-  const passwordInput = document.getElementById("password");
-  const errorBox = document.getElementById("error");
-
-  const email = emailInput.value.trim();
-  const password = passwordInput.value.trim();
-  errorBox.textContent = "";
+  const email = email.value.trim();
+  const password = password.value.trim();
+  error.textContent = "";
 
   if (!email || !password) {
-    errorBox.textContent = "Email and password required";
+    error.textContent = "Email and password required";
     return;
   }
 
@@ -121,14 +131,19 @@ function loginOrRegister() {
     .catch(err => {
       if (err.code === "auth/user-not-found") {
         auth.createUserWithEmailAndPassword(email, password)
-          .catch(e => errorBox.textContent = e.message);
+          .catch(e => error.textContent = e.message);
       } else {
-        errorBox.textContent = err.message;
+        error.textContent = err.message;
       }
     });
 }
 
-/* ===== AUTH STATE ===== */
+/* ================= LOGOUT ================= */
+function logout() {
+  auth.signOut();
+}
+
+/* ================= AUTH STATE ================= */
 auth.onAuthStateChanged(user => {
   if (!user) {
     loginBox.style.display = "block";
@@ -136,90 +151,107 @@ auth.onAuthStateChanged(user => {
     return;
   }
 
+  // KICK CHECK
+  kickedRef.child(user.uid).once("value", snap => {
+    if (snap.exists()) {
+      alert("You have been kicked by admin");
+      auth.signOut();
+    }
+  });
+
   isAdmin = user.email === ADMIN_EMAIL;
 
   loginBox.style.display = "none";
   chatBox.style.display = "block";
   adminPanel.style.display = isAdmin ? "block" : "none";
-  chat.innerHTML = "";
 
-  logEvent(user.email + " logged in");
+  // ONLINE STATUS
+  const userStatusRef = statusRef.child(user.uid);
+  const connectedRef = db.ref(".info/connected");
 
-  /* ONLINE STATUS */
-  const userStatus = db.ref("status/" + user.uid);
-  db.ref(".info/connected").on("value", snap => {
+  connectedRef.on("value", snap => {
     if (snap.val()) {
-      userStatus.onDisconnect().set({ state:"offline", email:user.email });
-      userStatus.set({ state:"online", email:user.email });
+      userStatusRef.onDisconnect().set({
+        email: user.email,
+        state: "offline"
+      });
+
+      userStatusRef.set({
+        email: user.email,
+        state: "online"
+      });
+
       statusText.textContent = "Online";
+      statusText.style.color = "lightgreen";
     }
   });
 
-  /* CHAT */
+  // LOAD MESSAGES
+  chat.innerHTML = "";
   messagesRef.off();
   messagesRef.on("child_added", snap => {
     const m = snap.val();
-    const d = document.createElement("div");
-    d.className = "message";
-    d.textContent = (isAdmin ? "[ADMIN] " : "") + m.name + ": " + m.text;
-    chat.appendChild(d);
+    const div = document.createElement("div");
+    div.className = "message";
+
+    div.textContent = m.name + ": " + m.text;
+
+    if (isAdmin) {
+      const del = document.createElement("span");
+      del.textContent = "❌";
+      del.className = "adminBtn";
+      del.onclick = () => messagesRef.child(snap.key).remove();
+      div.appendChild(del);
+    }
+
+    chat.appendChild(div);
     chat.scrollTop = chat.scrollHeight;
   });
-
-  /* ADMIN LOG VIEW */
-  if (isAdmin) {
-    adminLogs.innerHTML = "";
-    logsRef.limitToLast(50).on("child_added", s => {
-      const p = document.createElement("div");
-      p.textContent =
-        new Date(s.val().time).toLocaleTimeString() +
-        " - " + s.val().text;
-      adminLogs.appendChild(p);
-    });
-  }
 });
 
-/* ===== SEND MESSAGE ===== */
+/* ================= SEND MESSAGE ================= */
 function sendMessage() {
   if (!auth.currentUser) return;
+
   const text = messageInput.value.trim();
   if (!text) return;
 
   messagesRef.push({
-    name: auth.currentUser.email.split("@")[0],
-    text: text,
-    time: Date.now()
+    text,
+    name: auth.currentUser.email.split("@")[0]
   });
 
-  logEvent(auth.currentUser.email + " sent message");
   messageInput.value = "";
 }
 
-/* ===== LOGOUT ===== */
-function logout() {
-  if (!auth.currentUser) return;
-  logEvent(auth.currentUser.email + " logged out");
-  db.ref("status/" + auth.currentUser.uid)
-    .set({ state:"offline", email:auth.currentUser.email })
-    .then(() => auth.signOut());
-}
-
-/* ===== ONLINE USERS ===== */
+/* ================= ONLINE USERS + KICK ================= */
 statusRef.on("value", snap => {
   onlineUsers.innerHTML = "";
-  snap.forEach(c => {
-    if (c.val().state === "online") {
+  kickList.innerHTML = "";
+
+  snap.forEach(child => {
+    const data = child.val();
+
+    if (data.state === "online") {
       const li = document.createElement("li");
-      li.textContent = c.val().email;
+      li.textContent = data.email;
       onlineUsers.appendChild(li);
+
+      if (isAdmin) {
+        const kickBtn = document.createElement("button");
+        kickBtn.textContent = "Kick";
+        kickBtn.onclick = () => {
+          kickedRef.child(child.key).set(true);
+        };
+
+        const kli = document.createElement("li");
+        kli.textContent = data.email + " ";
+        kli.appendChild(kickBtn);
+        kickList.appendChild(kli);
+      }
     }
   });
 });
-
-/* ===== LOG FUNCTION ===== */
-function logEvent(text) {
-  logsRef.push({ text:text, time:Date.now() });
-}
 </script>
 
 </body>
